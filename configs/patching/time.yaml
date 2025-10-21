@@ -1,0 +1,6 @@
+tstride: 2
+tshape: 2
+fstride: 128
+fshape: 128
+name: time
+decoder_window_sizes: [2,5,10,25,50,0,0,0]
