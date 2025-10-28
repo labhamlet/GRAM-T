@@ -23,6 +23,7 @@ class RuntimeGRAMT(torch.nn.Module):
         input_tdim,
         starategy: str = "raw",
         layer: int = None,
+        skip_weights = False,
         **kwargs,
     ) -> None:
         super().__init__()
@@ -49,7 +50,8 @@ class RuntimeGRAMT(torch.nn.Module):
             decoder_window_sizes=self.decoder_window_sizes,
             use_mwmae_decoder=self.use_mwmae_decoder,
         )
-        self.model.load_state_dict(weights["state_dict"], strict=False)
+        if not skip_weights:
+            self.model.load_state_dict(weights["state_dict"], strict=False)
 
         # The input size to the model is the input_t_dim and the number of mel bins.
         self.grid_size = self.model.grid_size

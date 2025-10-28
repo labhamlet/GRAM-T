@@ -134,9 +134,8 @@ python3 -m heareval.predictions.runner $embeddings_dir/$model_name-strategy=$str
    - Extract all files to a designated directory (`$LOCALIZATION_TASKS_DIR`)
 
 2. **Pre-trained Model Weights:**
-   - To access the GRAM-T models, huggingface needs to be set up additionally to requirements.txt
-   - To get the GRAM-T moodels, use the huggingface specifications directory in the repo. This directory contains all the specifications needed to get the models from huggingface until GRAM-T models are mapped into transformers library.
-   
+   - Download pre-trained weights from [repository link]
+   - Set the path to the weights directory as `$MODEL_DIR`
 
 #### Feature Extraction and Evaluation
 
