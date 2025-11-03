@@ -60,8 +60,10 @@ python3 train.py data=audioset data.sr=32000 patching=frame data.mask_patch=100 
    - Extract all files to a designated directory (`$TASKS_DIR`)
 
 2. **Pre-trained Model Weights:**
-   - Download pre-trained weights from [repository link]
-   - Set the path to the weights directory as `$MODEL_DIR`
+   - Install the latest version of the huggingface with a pip install huggingface. Note: You should install huggingface after setting up the requirements.txt
+   - Then, to get the pretrained model weights, navigate to the huggingface directory.
+   - Run the gramt_binaural.py. This is the pretrained model, and the definition can be copied across the files. The most important point is to have RunTimeGRAMT discoverable via sys.
+
 
 #### Feature Extraction and Evaluation
 
