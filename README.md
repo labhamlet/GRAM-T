@@ -56,7 +56,7 @@ python3 train.py data=audioset data.sr=32000 patching=frame data.mask_patch=100 
 
 1. **Dataset Preparation:**
    - Follow the instructions at https://hearbenchmark.com/hear-tasks.html to acquire the data
-   - For convenience, download pre-processed 32000 Hz data directly from HEAR's [GCS bucket](gs://hear2021-archive/tasks/)
+   - For convenience, download pre-processed 32000 Hz data directly from HEAR gs://hear2021-archive/tasks
    - Extract all files to a designated directory (`$TASKS_DIR`)
 
 2. **Pre-trained Model Weights:**
