@@ -209,63 +209,6 @@ class SeldModel(torch.nn.Module):
         return doa
 
 
-# class GRAM(torch.nn.Module):
-#     def __init__(self, weights, out_shape, params):
-#         super().__init__()
-#         self.nb_classes = params['unique_classes']
-#         self.model = GRAMT(
-#             model_size="base",
-#             patch_strategy=PatchStrategy(
-#                 fshape=16,
-#                 fstride=16,
-#                 tshape=8,
-#                 tstride=8,
-#                 input_fdim=128,
-#                 input_tdim=200,
-#             ),
-#             starategy="raw",
-#             use_mwmae_decoder=True,
-#             decoder_window_sizes=[0, 0, 0, 0, 0, 0, 0, 0],
-#             in_channels=7,
-#         )
-        
-
-#         weights = torch.load(
-#             weights,
-#             map_location=torch.device("cuda:0" if torch.cuda.is_available() else "cpu"),
-#         )
-
-#         self.model.load_state_dict(weights['state_dict'], strict=False)
-#         self.model.requires_grad_(True)
-#         self.model.train()
-#         self.non_lin =  nn.LeakyReLU(0.1)
-#         # We will train the new patch_embedding layer to match the resolution of the labels.
-#         self.fnn_list = torch.nn.ModuleList()
-#         self.fnn_list.append(nn.Linear(6144, 1024, bias=True))
-#         self.fnn_list.append(nn.Linear(1024, 128, bias=True))
-#         self.fnn_list.append(nn.Linear(128, out_shape[-1], bias=True))
-#         self.conv = nn.Conv1d(
-#                 in_channels=6144,
-#                 out_channels=6144,
-#                 kernel_size=6,
-#                 stride=1,
-#                 padding=0,
-#                 bias=False,
-#             )
-        
-#     def forward(self, x):
-#         '''input: (batch_size, mic_channels, time_steps, mel_bins)'''
-#         x = self.model.get_audio_representation(x, strategy="raw")
-#         x = x.permute(0, 2, 1)  # (batch, features, time_80ms)
-#         x = self.conv(x)
-#         x = x.permute(0, 2, 1)  # (batch, features, time_80ms)   
-        
-#         for fnn_cnt in range(len(self.fnn_list) - 1):
-#             x = self.fnn_list[fnn_cnt](x)
-#             x = self.non_lin(x)
-#         doa = torch.tanh(self.fnn_list[-1](x))
-#         return doa
-
 
 class GRAM(torch.nn.Module):
     def __init__(self, weights, out_shape, params):
@@ -287,76 +230,31 @@ class GRAM(torch.nn.Module):
             in_channels=7,
         )
         
-        # weights = torch.load(
-        #     weights,
-        #     map_location=torch.device("cuda:0" if torch.cuda.is_available() else "cpu"),
-        # )
+        weights = torch.load(
+            weights,
+            map_location=torch.device("cuda:0" if torch.cuda.is_available() else "cpu"),
+        )
 
-        # self.model.load_state_dict(weights['state_dict'], strict=False)
+        self.model.load_state_dict(weights['state_dict'], strict=False)
         self.model.requires_grad_(True)
         self.model.train()
         self.non_lin = nn.LeakyReLU(0.1)
         
-        # Temporal alignment components
-        # self.temporal_align = nn.Sequential(
-        #     nn.Conv1d(6144, 6144, kernel_size=3, stride=1, padding=1),
-        #     nn.LeakyReLU(0.1),
-        #     nn.Conv1d(6144, 6144, kernel_size=3, stride=1, padding=1),
-        # )
-        
-        # Learnable resampling: 80ms -> 100ms
-        # Input: 25 frames (2s at 80ms) -> Target: 20 frames (2s at 100ms)
-        # self.temporal_upsample = nn.ConvTranspose1d(
-        #     in_channels=6144,
-        #     out_channels=6144,
-        #     kernel_size=4,
-        #     stride=1,
-        #     padding=1,
-        #     output_padding=0
-        # )
-        
         # Adaptive pooling to handle variable lengths and ensure exact alignment
         self.adaptive_pool = nn.AdaptiveAvgPool1d(20)  
         
-        # Temporal modeling
-        self.temporal_conv = nn.Sequential(
-            nn.Conv1d(6144, 6144, kernel_size=5, stride=1, padding=2, groups=6144),  # Depthwise
-            nn.LeakyReLU(0.1),
-            nn.Conv1d(6144, 6144, kernel_size=3, stride=1, padding=1),
-            nn.LeakyReLU(0.1),
-        )
-        
-        # Keep your existing FNN structure
         self.fnn_list = torch.nn.ModuleList()
         self.fnn_list.append(nn.Linear(6144, 1024, bias=True))
         self.fnn_list.append(nn.Linear(1024, 128, bias=True))
         self.fnn_list.append(nn.Linear(128, out_shape[-1], bias=True))
         
-        # Residual connection for temporal processing
-        self.residual_conv = nn.Conv1d(6144, 6144, 1)
-        
+
     def forward(self, x):
         '''input: (batch_size, mic_channels, time_steps, mel_bins)'''
         x = self.model.get_audio_representation(x, strategy="raw")
         x_aligned = x.permute(0, 2, 1)  # (batch, features, time_80ms)
-                
-        # # Step 1: Temporal alignment and context modeling
-        # x_aligned = self.temporal_align(x)
-        
-        # Step 2: Learnable upsampling to approximate 100ms resolution
-        # x_upsampled = self.temporal_upsample(x_aligned)
-        
-        # Step 3: Adaptive pooling to exact target temporal resolution (100ms)
         # For 2s audio: 25 frames (80ms) -> 20 frames (100ms)
         x_pooled = self.adaptive_pool(x_aligned)
-        
-        # x_temporal = self.temporal_conv(x_pooled)
-        
-        # # Residual connection
-        # if x_pooled.shape == x_temporal.shape:
-        #     x_temporal = x_temporal + self.residual_conv(x_pooled)
-        
-        # # Prepare for FNN - permute to (batch, time, features)
         x_temporal = x_pooled.permute(0, 2, 1)  # (batch, time_100ms, features)
         
         for fnn_cnt in range(len(self.fnn_list) - 1):
