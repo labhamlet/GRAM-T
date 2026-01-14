@@ -217,28 +217,28 @@ class GRAMT(pl.LightningModule):
             ),
         )
 
-        # if self.in_channels == 2 or self.in_channels == 1:
-        #     self.melspec = torchaudio.transforms.MelSpectrogram(
-        #         sample_rate=self.sr,
-        #         n_fft=1024,
-        #         win_length=1024,
-        #         hop_length=320,
-        #         f_min=50,
-        #         f_max=self.sr // 2,
-        #         n_mels=self.num_mel_bins,
-        #         power=2.0,
-        #     ).float() 
-        # else:
-        #     self.melspec = FeatureExtractor(
-        #         sample_rate=self.sr,
-        #         n_fft=1024,
-        #         win_length=1024,
-        #         hop_length=self.sr // 100,
-        #         f_min=50,
-        #         f_max=self.sr // 2,
-        #         n_mels=self.num_mel_bins,
-        #         power=2.0,
-        #     ).float()
+        if self.in_channels == 2 or self.in_channels == 1:
+            self.melspec = torchaudio.transforms.MelSpectrogram(
+                sample_rate=self.sr,
+                n_fft=1024,
+                win_length=1024,
+                hop_length=320,
+                f_min=50,
+                f_max=self.sr // 2,
+                n_mels=self.num_mel_bins,
+                power=2.0,
+            ).float() 
+        else:
+            self.melspec = FeatureExtractor(
+                sample_rate=self.sr,
+                n_fft=1024,
+                win_length=1024,
+                hop_length=self.sr // 100,
+                f_min=50,
+                f_max=self.sr // 2,
+                n_mels=self.num_mel_bins,
+                power=2.0,
+            ).float()
 
         self.decoder_norm = nn.LayerNorm(self.decoder_embedding_dim)
         # Normalize binaural/ambisonic spectrograms with Layer norm later.
@@ -255,16 +255,16 @@ class GRAMT(pl.LightningModule):
             self._compile_operations()
 
 
-    # def _wav2fbank(self, waveform):
-        # with torch.amp.autocast('cuda', enabled=False):  # Force FP32 computation
-        #     waveform = waveform.float()
-        #     # mel = self.melspec(waveform)  # Ensure input is float32
-        #     if self.in_channels == 2 or self.in_channels == 1:
-        #         log_mel = torch.log(mel + 1e-5).transpose(3, 2)
-        #     else:
-        #         # Otherwise we have already the log mel spec.
-        #         log_mel = mel.transpose(3,2)
-        # return log_mel
+    def _wav2fbank(self, waveform):
+        with torch.amp.autocast('cuda', enabled=False):  # Force FP32 computation
+            waveform = waveform.float()
+            # mel = self.melspec(waveform)  # Ensure input is float32
+            if self.in_channels == 2 or self.in_channels == 1:
+                log_mel = torch.log(mel + 1e-5).transpose(3, 2)
+            else:
+                # Otherwise we have already the log mel spec.
+                log_mel = mel.transpose(3,2)
+        return log_mel
 
     def _compile_operations(self):
         """
