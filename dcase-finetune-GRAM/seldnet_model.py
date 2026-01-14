@@ -120,95 +120,6 @@ class MSELoss_ADPIT(object):
         return loss
 
 
-class ConvBlock(nn.Module):
-    def __init__(self, in_channels, out_channels, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1)):
-        super().__init__()
-        self.conv = nn.Conv2d(in_channels=in_channels, out_channels=out_channels, kernel_size=kernel_size, stride=stride, padding=padding)
-        self.bn = nn.BatchNorm2d(out_channels)
-
-    def forward(self, x):
-        x = F.relu(self.bn(self.conv(x)))
-        return x
-
-
-class PositionalEmbedding(nn.Module):  # Not used in the baseline
-    def __init__(self, d_model, max_len=512):
-        super().__init__()
-
-        # Compute the positional encodings once in log space.
-        pe = torch.zeros(max_len, d_model).float()
-        pe.require_grad = False
-
-        position = torch.arange(0, max_len).float().unsqueeze(1)
-        div_term = (torch.arange(0, d_model, 2).float() * -(math.log(10000.0) / d_model)).exp()
-
-        pe[:, 0::2] = torch.sin(position * div_term)
-        pe[:, 1::2] = torch.cos(position * div_term)
-
-        pe = pe.unsqueeze(0)
-        self.register_buffer('pe', pe)
-
-    def forward(self, x):
-        return self.pe[:, :x.size(1)]
-
-
-class SeldModel(torch.nn.Module):
-    def __init__(self, in_feat_shape, out_shape, params):
-        super().__init__()
-        self.nb_classes = params['unique_classes']
-        self.params=params
-        self.conv_block_list = nn.ModuleList()
-        if len(params['f_pool_size']):
-            for conv_cnt in range(len(params['f_pool_size'])):
-                self.conv_block_list.append(ConvBlock(in_channels=params['nb_cnn2d_filt'] if conv_cnt else in_feat_shape[1], out_channels=params['nb_cnn2d_filt']))
-                self.conv_block_list.append(nn.MaxPool2d((params['t_pool_size'][conv_cnt], params['f_pool_size'][conv_cnt])))
-                self.conv_block_list.append(nn.Dropout2d(p=params['dropout_rate']))
-
-        self.gru_input_dim = params['nb_cnn2d_filt'] * int(np.floor(in_feat_shape[-1] / np.prod(params['f_pool_size'])))
-        self.gru = torch.nn.GRU(input_size=self.gru_input_dim, hidden_size=params['rnn_size'],
-                                num_layers=params['nb_rnn_layers'], batch_first=True,
-                                dropout=params['dropout_rate'], bidirectional=True)
-
-        # self.pos_embedder = PositionalEmbedding(self.params['rnn_size'])
-
-        self.mhsa_block_list = nn.ModuleList()
-        self.layer_norm_list = nn.ModuleList()
-        for mhsa_cnt in range(params['nb_self_attn_layers']):
-            self.mhsa_block_list.append(nn.MultiheadAttention(embed_dim=self.params['rnn_size'], num_heads=params['nb_heads'], dropout=params['dropout_rate'],  batch_first=True))
-            self.layer_norm_list.append(nn.LayerNorm(self.params['rnn_size']))
-
-        self.fnn_list = torch.nn.ModuleList()
-        if params['nb_fnn_layers']:
-            for fc_cnt in range(params['nb_fnn_layers']):
-                self.fnn_list.append(nn.Linear(params['fnn_size'] if fc_cnt else self.params['rnn_size'], params['fnn_size'], bias=True))
-        self.fnn_list.append(nn.Linear(params['fnn_size'] if params['nb_fnn_layers'] else self.params['rnn_size'], out_shape[-1], bias=True))
-
-    def forward(self, x):
-        """input: (batch_size, mic_channels, time_steps, mel_bins)"""
-        for conv_cnt in range(len(self.conv_block_list)):
-            x = self.conv_block_list[conv_cnt](x)
-
-        x = x.transpose(1, 2).contiguous()
-        x = x.view(x.shape[0], x.shape[1], -1).contiguous()
-        (x, _) = self.gru(x)
-        x = torch.tanh(x)
-        x = x[:, :, x.shape[-1]//2:] * x[:, :, :x.shape[-1]//2]
-
-        # pos_embedding = self.pos_embedder(x)
-        # x = x + pos_embedding
-        
-        for mhsa_cnt in range(len(self.mhsa_block_list)):
-            x_attn_in = x 
-            x, _ = self.mhsa_block_list[mhsa_cnt](x_attn_in, x_attn_in, x_attn_in)
-            x = x + x_attn_in
-            x = self.layer_norm_list[mhsa_cnt](x)
-
-        for fnn_cnt in range(len(self.fnn_list) - 1):
-            x = self.fnn_list[fnn_cnt](x)
-        doa = torch.tanh(self.fnn_list[-1](x))
-        return doa
-
-
 
 class GRAM(torch.nn.Module):
     def __init__(self, weights, out_shape, params):
@@ -229,16 +140,16 @@ class GRAM(torch.nn.Module):
             decoder_window_sizes=[0, 0, 0, 0, 0, 0, 0, 0],
             in_channels=7,
         )
-        
-        weights = torch.load(
-            weights,
-            map_location=torch.device("cuda:0" if torch.cuda.is_available() else "cpu"),
-        )
 
-        self.model.load_state_dict(weights['state_dict'], strict=False)
+        if weights:
+            weights = torch.load(
+                weights,
+                map_location=torch.device("cuda:0" if torch.cuda.is_available() else "cpu"),
+            ) 
+            self.model.load_state_dict(weights['state_dict'], strict=False)
+        
         self.model.requires_grad_(True)
         self.model.train()
-        self.non_lin = nn.LeakyReLU(0.1)
         
         # Adaptive pooling to handle variable lengths and ensure exact alignment
         self.adaptive_pool = nn.AdaptiveAvgPool1d(20)  
@@ -248,6 +159,7 @@ class GRAM(torch.nn.Module):
         self.fnn_list.append(nn.Linear(1024, 128, bias=True))
         self.fnn_list.append(nn.Linear(128, out_shape[-1], bias=True))
         
+        self.non_lin = nn.LeakyReLU(0.1)
 
     def forward(self, x):
         '''input: (batch_size, mic_channels, time_steps, mel_bins)'''
