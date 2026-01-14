@@ -273,7 +273,7 @@ def main(argv):
 
         # Collect i/o data size and load model configuration
         data_in, data_out = data_gen_train.get_data_sizes()
-        weights = "/gpfs/work5/0/prjs1261/saved_models_naturalistic_mixing_ambisonics/InChannels=7/Fraction=1.0/CleanDataFraction=0.0/Model=GRAM-T/ModelSize=base/LR=0.0002/BatchSize=96/NrSamples=16/Patching=frame/MaskPatch=160/InputL=200/Cluster=False/step=500000.ckpt"
+        weights = params.get("pretrained_ckpt", None)
         model = seldnet_model.GRAM(weights, data_out, params).to(device)
         # model = seldnet_model.SeldModel(data_in, data_out, params).to(device)
         if params['finetune_mode']:
