@@ -14,6 +14,7 @@ def get_params(argv='1'):
 
         # INPUT PATH
         dataset_dir='/projects/0/prjs1338/STARSS2023_32000',
+        pretrained_ckpt="/gpfs/work5/0/prjs1261/saved_models_naturalistic_mixing_ambisonics/InChannels=7/Fraction=1.0/CleanDataFraction=0.0/Model=GRAM-T/ModelSize=base/LR=0.0002/BatchSize=96/NrSamples=16/Patching=frame/MaskPatch=160/InputL=200/Cluster=False/step=500000.ckpt"
 
         # OUTPUT PATHS
         feat_label_dir='/projects/0/prjs1338/STARSS2023_gram_labels',
