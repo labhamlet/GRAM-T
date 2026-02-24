@@ -7,7 +7,7 @@ from pytorch_lightning import seed_everything
 from pytorch_lightning.callbacks import LearningRateMonitor, ModelCheckpoint
 from pytorch_lightning.loggers import TensorBoardLogger
 
-from src.data_modules import WebAudioDataModuleLMDB
+from src.data_modules import WebAudioDataModule
 from src.model import GRAMT
 from src.masking import SpatialMaskMaker
 from src.patching import PatchStrategy
@@ -115,7 +115,7 @@ def main(cfg):
         raise Exception("Unknown")
 
     print(f"Training with {base_dir}")
-    data = WebAudioDataModuleLMDB(
+    data = WebAudioDataModule(
         base_data_dir=base_dir,
         rir_data_dir =cfg.data.rir_data_dir,
         val_data_dir=cfg.data.val_data_dir,

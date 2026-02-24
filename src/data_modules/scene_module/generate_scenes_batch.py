@@ -71,8 +71,7 @@ def aggregate_noise(noise_rirs, noise_source):
 def process_audio(source_rir : torch.Tensor, 
     noise_rirs: List[torch.Tensor], 
     audio_source: torch.Tensor, 
-    noise_source: torch.Tensor, 
-    sr : int):
+    noise_source: torch.Tensor):
     """Facade function for processing the audio and noise sources with their corresponding RIRs
     Arguments
     ---------
@@ -158,8 +157,8 @@ def generate_scene(source_rir,
     # Case 1: Both source RIR and noise exist
     if source_rir[0] is not None and noise[0] is not None:
         convolved_source, agg_noise = process_audio(
-            source_rir[:, [0], :], 
-            noise_rirs[:, :, [0], :], 
+            source_rir,
+            noise_rirs,
             audio_source=source, 
             noise_source=noise
         )
@@ -169,7 +168,7 @@ def generate_scene(source_rir,
     
     # Case 2: Only source RIR exists (no noise)
     elif source_rir[0] is not None and noise[0] is None:
-        convolved_source = convolve_with_rir(source, source_rir[:, [0], :])
+        convolved_source = convolve_with_rir(source, source_rir)
         return convolved_source
     
     # Case 3: Only noise exists (no source RIR)

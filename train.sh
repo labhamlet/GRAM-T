@@ -3,7 +3,6 @@
 #SBATCH --gpus=1
 #SBATCH --job-name=GRAMTi
 #SBATCH --ntasks=1
-#SBATCH --ntasks-per-node=1
 #SBATCH --time=96:00:00
 #SBATCH --output=slurm_output_%A_%a.out
 #SBATCH --array=0
@@ -17,4 +16,4 @@ source activate spatial-ssast-trainer
 
 
 
-python3 train.py data=audioset data.clean_data_ratio=0.0 patching=time data.mask_patch=80
+python3 train.py data=audioset data.clean_data_ratio=0.0 patching=frame data.mask_patch=160

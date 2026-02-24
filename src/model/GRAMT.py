@@ -258,7 +258,7 @@ class GRAMT(pl.LightningModule):
     def _wav2fbank(self, waveform):
         with torch.amp.autocast('cuda', enabled=False):  # Force FP32 computation
             waveform = waveform.float()
-            # mel = self.melspec(waveform)  # Ensure input is float32
+            mel = self.melspec(waveform)  # Ensure input is float32
             if self.in_channels == 2 or self.in_channels == 1:
                 log_mel = torch.log(mel + 1e-5).transpose(3, 2)
             else:
@@ -542,7 +542,6 @@ class GRAMT(pl.LightningModule):
             else:
                 raise Exception(f"Unknown channel count {self.in_channels}")
 
-        # 2. Create Mel Spectrogram and pad
         fbank = self._wav2fbank(generated_scene)
         fbank = pad_or_truncate_batch(fbank, self.input_length) # B, C, T, F
         B, C, T, F_mel = fbank.shape
