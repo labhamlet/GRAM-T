@@ -508,7 +508,7 @@ class GRAMT(pl.LightningModule):
         Prepare the batch before the training step.
         This version is vectorized for performance and memory efficiency.
         '''
-        audio, noise, source_rir, noise_rirs, snr, mask = batch
+        audio, noise, noise_length, noise_idx, source_rir, noise_rirs, snr, mask = batch
         
         clean_batch = False
 
@@ -524,7 +524,9 @@ class GRAMT(pl.LightningModule):
         # 1. Generate scene
         generated_scene = generate_scenes_batch.generate_scene(
             source_rir=source_rir, noise_rirs=noise_rirs,
-            source=audio, noise=noise, snr=snr, sr=self.sr
+            source=audio, noise=noise, snr=snr,
+            real_noise_length=noise_length, 
+            noise_start_idx = noise_idx
         )
 
         # Stack the generated scene on the channel axis, this means that we did not augment our audio, and we are using the one-channel audio.

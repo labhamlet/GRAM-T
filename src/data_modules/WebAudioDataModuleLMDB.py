@@ -2,7 +2,7 @@ import os
 from torch.utils.data import DataLoader
 import pytorch_lightning as pl
 import webdataset as wds
-from .dataset_functions import pre_process_audio
+from .dataset_functions import pre_process_audio, pre_process_noise
 from .scene_module import generate_scenes 
 import torch 
 import multiprocessing as mp 
@@ -214,26 +214,29 @@ class WebAudioDataModuleLMDB(pl.LightningDataModule):
             source_rir = rirs[0]
         
         if self.with_noise:
-            noise = next(self.noise_loader)
-            noise = generate_scenes.fade_noise(noise, audio, self.sr)
-            
             if self.with_rir:
                 noise_rirs = rirs[1:]
             
+            noise = next(self.noise_loader)
+            noise = pre_process_noise(noise)
+            #This function already handles the randomly cropping noise to match audio length 
+            #if noise is bigger than the audio length.
+            noise = generate_scenes.fade_noise(noise, audio, self.sr)
+            noise_length = noise.shape[-1]
+            # If audio is bigger than noise, then we will place the noise in a random location of the audio
             if audio.shape[-1] > noise.shape[-1]:
-                start_idx_noise = torch.randint(0, audio.shape[-1] - noise.shape[-1], (1,))
+                noise_start_idx = torch.randint(0, audio.shape[-1] - noise.shape[-1], (1,)).item()
                 new_agg_noise = torch.zeros_like(audio)
-                new_agg_noise[start_idx_noise:start_idx_noise + noise.shape[-1]] = noise
+                new_agg_noise[noise_start_idx:noise_start_idx + noise.shape[-1]] = noise
                 noise = new_agg_noise
-            snr_val = torch.distributions.uniform.Uniform(5, 40).sample()
-            snr = torch.FloatTensor([2]).fill_(snr_val)
+            snr = torch.distributions.uniform.Uniform(self.snr_low, self.snr_high).sample().item()
 
         context_idx = self.masker(
             local_features=None,
             batch_size=self.nr_samples_per_audio,
             n_times=self.nr_patches
         )
-        return audio, noise, source_rir, noise_rirs, snr, context_idx
+        return audio, noise, noise_length, noise_start_idx, source_rir, noise_rirs, snr, context_idx
 
     def make_web_dataset(self, path: str, split_scene: str, split_noise: str, shuffle: int):
         """Create a WebDataset pipeline for audio processing."""

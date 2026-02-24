@@ -42,72 +42,6 @@ def convolve_with_rir(waveform: torch.Tensor, rir: torch.Tensor) -> torch.Tensor
     return convolved[..., : waveform.shape[-1]]
 
 
-def add_noise(
-    waveform: torch.Tensor,
-    noise: torch.Tensor,
-    snr: torch.Tensor
-) -> torch.Tensor:
-    r"""Taken from torchaudio source code.
-    
-    Scales and adds noise to waveform per signal-to-noise ratio.
-
-    Specifically, for each pair of waveform vector :math:`x \in \mathbb{R}^L` and noise vector
-    :math:`n \in \mathbb{R}^L`, the function computes output :math:`y` as
-
-    .. math::
-        y = x + a n \, \text{,}
-
-    where
-
-    .. math::
-        a = \sqrt{ \frac{ ||x||_{2}^{2} }{ ||n||_{2}^{2} } \cdot 10^{-\frac{\text{SNR}}{10}} } \, \text{,}
-
-    with :math:`\text{SNR}` being the desired signal-to-noise ratio between :math:`x` and :math:`n`, in dB.
-
-    Note that this function broadcasts singleton leading dimensions in its inputs in a manner that is
-    consistent with the above formulae and PyTorch's broadcasting semantics.
-
-    .. devices:: CPU CUDA
-
-    .. properties:: Autograd TorchScript
-
-    Args:
-        waveform (torch.Tensor): Input waveform, with shape `(..., L)`.
-        noise (torch.Tensor): Noise, with shape `(..., L)` (same shape as ``waveform``).
-        snr (torch.Tensor): Signal-to-noise ratios in dB, with shape `(...,)`.
-        lengths (torch.Tensor or None, optional): Valid lengths of signals in ``waveform`` and ``noise``, with shape
-            `(...,)` (leading dimensions must match those of ``waveform``). If ``None``, all elements in ``waveform``
-            and ``noise`` are treated as valid. (Default: ``None``)
-
-    Returns:
-        torch.Tensor: Result of scaling and adding ``noise`` to ``waveform``, with shape `(..., L)`
-        (same shape as ``waveform``).
-    """
-
-    if not (
-        waveform.ndim - 1 == noise.ndim - 1 == snr.ndim
-    ):
-        raise ValueError("Input leading dimensions don't match.")
-
-    L = waveform.size(-1)
-
-    if L != noise.size(-1):
-        raise ValueError(
-            f"Length dimensions of waveform and noise don't match (got {L} and {noise.size(-1)})."
-        )
-
-    energy_signal = (
-        torch.linalg.vector_norm(waveform, ord=2, dim=-1) ** 2
-    )  # (*,)
-    energy_noise = torch.linalg.vector_norm(noise, ord=2, dim=-1) ** 2  # (*,)
-    original_snr_db = 10 * (torch.log10(energy_signal) - torch.log10(energy_noise))
-    scale = 10 ** ((original_snr_db - snr) / 20.0)  # (*,)
-
-    # scale noise
-    scaled_noise = scale.unsqueeze(-1) * noise  # (*, 1) * (*, L) = (*, L)
-
-    return waveform + scaled_noise  # (*, L)
-
 def aggregate_noise(noise_rirs, noise_source):
     """Aggregate the multiple noise sources into one waveform.
     this creates a naturalistic scene where multiple noise sources are in. 
@@ -173,25 +107,76 @@ def process_audio(source_rir : torch.Tensor,
     return convolved_source, agg_noise
 
 
-def generate_scene(source_rir, noise_rirs, source, noise, snr, sr):
+def add_noise(source, noise, snr, start_idx, real_noise_length):
+    """
+    Vectorized SNR mixing for N-channel audio preserving spatial cues (ITD/ILD).
+    
+    Arguments:
+        source: (B, C, T) - The clean speech
+        noise: (B, C, T) - The noise (already padded/convolved)
+        snr: (B, 1) or float
+        start_idx: (B,) Tensor of start indices
+        real_noise_length: (B,) Tensor of noise durations
+    """
+    B, C, T = source.shape
+    device = source.device
+    # Note: Mask is (B, 1, T) so it broadcasts identically across all channels C
+    t_indices = torch.arange(T, device=device).view(1, 1, -1)
+    mask = (t_indices >= start_idx.view(B, 1, 1)) & \
+           (t_indices < (start_idx + real_noise_length).view(B, 1, 1))
+
+    # To preserve ITD/ILD, we must treat the N-channel signal as a single entity.
+    # We sum the squares across both the Channel and Time dimensions.
+    energy_x_active = torch.sum((source * mask)**2, dim=(-2, -1), keepdim=True)
+    energy_n_active = torch.sum((noise * mask)**2, dim=(-2, -1), keepdim=True)
+
+    # Format SNR
+    if not isinstance(snr, torch.Tensor):
+        snr_tensor = torch.tensor(snr, device=device).view(B, 1, 1)
+    else:
+        snr_tensor = snr.view(B, 1, 1)
+
+    # Formula: a = sqrt( (Energy_x / Energy_n) * 10^(-SNR/10) )
+    # This 'a' scales all channels of the noise by the exact same amount.
+    scale_factor = 10 ** (-snr_tensor / 10.0)
+    a = torch.sqrt((energy_x_active / (energy_n_active + 1e-9)) * scale_factor)
+
+    # Apply the same gain 'a' to all channels of the noise
+    return source + a * noise
+
+def generate_scene(source_rir, 
+                   noise_rirs, 
+                   source, 
+                   noise,
+                   real_noise_length,
+                   noise_start_idx,
+                   snr):
+    """
+    Generates a scene based on provided RIRs and Noise.
+    Ensures output is consistently (B, 1, T).
+    """
     # Case 1: Both source RIR and noise exist
     if source_rir[0] is not None and noise[0] is not None:
-        source, noise = process_audio(
-            source_rir, noise_rirs, audio_source=source, noise_source=noise, sr=sr
+        convolved_source, agg_noise = process_audio(
+            source_rir[:, [0], :], 
+            noise_rirs[:, :, [0], :], 
+            audio_source=source, 
+            noise_source=noise
         )
-        return add_noise(source, noise, snr)
+    
+        # Apply Segmental SNR mixing
+        return add_noise(convolved_source, agg_noise, snr, noise_start_idx, real_noise_length)
     
     # Case 2: Only source RIR exists (no noise)
     elif source_rir[0] is not None and noise[0] is None:
-        convolved_source = convolve_with_rir(source, source_rir)
+        convolved_source = convolve_with_rir(source, source_rir[:, [0], :])
         return convolved_source
     
     # Case 3: Only noise exists (no source RIR)
     elif source_rir[0] is None and noise[0] is not None:
-        # Need to decide: add noise to raw source or skip noise?
-        snr = snr.squeeze()
-        return add_noise(source, noise, snr).unsqueeze(1)  # or just return source
+        # Use add_noise on the raw source
+        return add_noise(source, noise, snr, noise_start_idx, real_noise_length)
     
-    # Case 4: Neither source RIR nor noise exists, return one channel audio
-    else:  # source_rir[0] is None and noise[0] is None
-        return source.unsqueeze(1)
+    # Case 4: Neither source RIR nor noise exists
+    else:
+        return source
