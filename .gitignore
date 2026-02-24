@@ -171,4 +171,5 @@ cython_debug/
 .ruff_cache/
 
 seld-dcase2022/
-seld-dcase-2022-GRAM/
+seld-dcase-2022-GRAM/src/data_prep/data/
+fine_tuning/data_prep/
