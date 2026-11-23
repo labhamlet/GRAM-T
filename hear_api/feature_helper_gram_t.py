@@ -33,7 +33,7 @@ class FeatureExtractor(torch.nn.Module):
                 f_max=self.sr // 2,
                 n_mels=self.num_mel_bins,
                 power=2.0,
-            ).cuda() 
+            )
         else:
             self.melspec = Extractor(
                 sample_rate=self.sr,
@@ -44,7 +44,7 @@ class FeatureExtractor(torch.nn.Module):
                 f_max=self.sr // 2,
                 n_mels=self.num_mel_bins,
                 power=2.0,
-            ).cuda()
+            )
     def _wav2fbank(self, waveforms):
         """
         Convert audio waveforms to log-mel filterbank features.
@@ -118,7 +118,9 @@ class FeatureExtractor(torch.nn.Module):
         return torch.nn.utils.rnn.pad_sequence(features, batch_first=True)
 
     def forward(self, x):
-        x = self._wav2fbank(x).cuda()
+        device = x[0].device if isinstance(x, list) else x.device
+        self.melspec.to(device)
+        x = self._wav2fbank(x).to(device)
         return x
 
 
